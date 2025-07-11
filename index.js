@@ -90,7 +90,7 @@ async function loadCookies(page) {
       if (rowBuffer.length === 0) startRow = globalIndex;
       rowBuffer.push(rowData);
 
-      // Write in bulk every 10 rows
+      // Write in bulk every 10 rows.
       if (rowBuffer.length === 10) {
         await writeBulkWithRetry(startRow, rowBuffer);
         rowBuffer = [];
