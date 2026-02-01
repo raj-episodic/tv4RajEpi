@@ -1,10 +1,17 @@
-// scraper.js
-// ✅ Updated: robust legend scraping (no hashed classes), removes junk like "fie fie"
+// scraper.js (UPDATED FOR "INDICATOR NOT FOUND" ISSUE)
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36";
+
+// ✅ Put multiple possible names here (whatever your indicator shows as in legend)
+const INDICATOR_KEYWORDS = [
+  "clubbed",        // main keyword
+  // "clubbed v2",
+  // "clubbed (raj)",
+  // "club",         // add more ONLY if needed
+];
 
 async function safeGoto(page, url, retries = 3) {
   await page.setUserAgent(UA);
@@ -12,22 +19,16 @@ async function safeGoto(page, url, retries = 3) {
   for (let i = 0; i < retries; i++) {
     try {
       console.log(`[Navigation] Attempt ${i + 1}: ${url}`);
-
       await page.goto(url, { waitUntil: "load", timeout: 60000 });
 
-      // kill blockers early
       await killPopups(page);
 
-      // wait canvas render (chart engine)
       await page.waitForFunction(() => {
         const canvas = document.querySelector("canvas");
         return canvas && canvas.offsetWidth > 0;
       }, { timeout: 25000 });
 
-      // buffer for indicators calc
-      await delay(4000);
-
-      // kill delayed popups
+      await delay(3500);
       await killPopups(page);
 
       return true;
@@ -73,9 +74,7 @@ async function killPopups(page) {
       });
       if (consentBtn) consentBtn.click();
     });
-  } catch (e) {
-    // ignore
-  }
+  } catch (e) {}
 }
 
 // keep same column count
@@ -100,29 +99,51 @@ export async function scrapeChart(page, url) {
       return ["", "", ...fixedLength(["NAVIGATION FAILED"], EXPECTED_VALUE_COUNT)];
     }
 
-    // wait legend
-    await page.waitForSelector('[data-qa-id="legend"]', { timeout: 20000 });
+    await page.waitForSelector('[data-qa-id="legend"]', { timeout: 25000 });
+
+    // ✅ DEBUG: print legend titles visible on this page
+    const titlesOnPage = await page.evaluate(() => {
+      const norm = (s) => (s || "").replace(/\s+/g, " ").trim();
+      const root = document.querySelector('[data-qa-id="legend"]');
+      if (!root) return [];
+
+      const nodes = Array.from(
+        root.querySelectorAll('[data-qa-id="legend-source-title"]')
+      );
+
+      return nodes.map((n) => norm(n.innerText)).filter(Boolean);
+    });
+
+    console.log("[DEBUG] legend titles:", titlesOnPage);
 
     const now = new Date();
     const dateString = buildDate(now.getDate(), now.getMonth() + 1, now.getFullYear());
 
-    const values = await page.$$eval('[data-qa-id="legend"]', (legends) => {
-      const legend = legends[0];
-      if (!legend) return ["LEGEND NOT FOUND"];
-
+    const values = await page.evaluate((KEYWORDS) => {
       const norm = (s) => (s || "").replace(/\s+/g, " ").trim().toLowerCase();
 
-      // Titles (indicator name area)
+      const legend = document.querySelector('[data-qa-id="legend"]');
+      if (!legend) return ["LEGEND NOT FOUND"];
+
       const titles = Array.from(
         legend.querySelectorAll('[data-qa-id="legend-source-title"]')
       );
 
-      // find indicator whose title includes "clubbed"
-      const targetTitleEl = titles.find((t) => norm(t.innerText).includes("clubbed"));
+      if (!titles.length) return ["NO LEGEND TITLES"];
 
-      if (!targetTitleEl) return ["INDICATOR NOT FOUND"];
+      // find a title that matches any keyword
+      const targetTitleEl = titles.find((t) => {
+        const titleText = norm(t.innerText);
+        return KEYWORDS.some((k) => titleText.includes(norm(k)));
+      });
 
-      // find closest section block that contains both title + values
+      if (!targetTitleEl) {
+        // return what we saw so you can adjust keywords easily
+        const seen = titles.map((t) => (t.innerText || "").trim()).filter(Boolean);
+        return ["INDICATOR NOT FOUND", "SEEN:", ...seen.slice(0, 10)];
+      }
+
+      // find nearest section container
       const section =
         targetTitleEl.closest('[class*="item-"]') ||
         targetTitleEl.closest('[class*="legendItem-"]') ||
@@ -130,24 +151,23 @@ export async function scrapeChart(page, url) {
 
       if (!section) return ["SECTION NOT FOUND"];
 
-      // values: partial class match survives hash changes
+      // Values (partial class match)
       const valueSpans = section.querySelectorAll('[class*="valueValue-"]');
 
       const results = Array.from(valueSpans)
         .map((s) => (s.textContent || "").trim())
         .filter(Boolean)
-        // remove junk single letters or tiny fragments like "f", "ie"
+        // remove tiny junk like "f", "ie"
         .filter((v) => v.length > 1);
 
       return results.length ? results : ["NO VALUES"];
-    });
+    }, INDICATOR_KEYWORDS);
 
     console.log("[DEBUG] current page url:", page.url());
     console.log("[DEBUG] values:", values);
 
     console.log(`[Success] Scraped ${values.length} values from ${url}`);
 
-    // output format: ["", "", date, ...values] with fixed length
     return ["", "", dateString, ...fixedLength(values, EXPECTED_VALUE_COUNT - 1)];
   } catch (err) {
     console.error(`[Fatal] Scrape Error on ${url}:`, err.message);
