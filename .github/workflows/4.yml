@@ -1,4 +1,4 @@
-name: T4 Shard 3 (Rows 1501-2000)
+name: T4 Shard 3 (Rows 1531-2040)
 on:
   workflow_dispatch:
   schedule:
@@ -17,6 +17,6 @@ jobs:
       - name: Run scraper
         env:
           SHARD_INDEX: 3
-          SHARD_SIZE: 500
+          SHARD_SIZE: 510
           CHECKPOINT_FILE: checkpoint_g3_3.txt
         run: python run_scraper.py
