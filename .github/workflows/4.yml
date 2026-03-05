@@ -1,16 +1,11 @@
-name: T4 (Shards 15-19)
+name: T4 Shard 3 (Rows 1501-2000)
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 11 * * 1-5'
+    - cron: '45 11 * * 1-5'
 jobs:
   scrape:
     runs-on: ubuntu-22.04
-    strategy:
-      fail-fast: false
-      max-parallel: 5
-      matrix:
-        shard: [15, 16, 17, 18, 19]
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
@@ -21,7 +16,7 @@ jobs:
           echo '${{ secrets.TRADINGVIEW_COOKIES }}' > cookies.json
       - name: Run scraper
         env:
-          SHARD_INDEX: ${{ matrix.shard }}
-          SHARD_STEP: 25
-          CHECKPOINT_FILE: checkpoint_g4_${{ matrix.shard }}.txt
+          SHARD_INDEX: 3
+          SHARD_SIZE: 500
+          CHECKPOINT_FILE: checkpoint_g3_3.txt
         run: python run_scraper.py
